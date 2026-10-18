@@ -1,0 +1,88 @@
+name: APK Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tests del motor de cálculo
+        run: npm test
+
+      - name: Preparar la web de la app
+        run: node scripts/build-web.js www
+
+      - name: Crear proyecto Android
+        run: npx cap add android
+
+      - name: Ícono y pantalla de inicio
+        run: npx capacitor-assets generate --android --assetPath resources
+
+      - name: Número de versión
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
+
+      - name: Sincronizar
+        run: npx cap sync android
+
+      - name: Compilar
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Firmar APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "::error title=Falta la clave de firma::Agrega los secretos ANDROID_KEYSTORE_BASE64 y ANDROID_KEYSTORE_PASSWORD en Settings > Secrets and variables > Actions, y vuelve a ejecutar este flujo."
+            exit 1
+          fi
+          echo "$KS_B64" | base64 -d > ks.p12
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          "$BT/apksigner" sign --ks ks.p12 --ks-type PKCS12 --ks-pass env:KS_PASS --key-pass env:KS_PASS --ks-key-alias ahorra --out AHORRA-plus.apk aligned.apk
+          "$BT/apksigner" verify --print-certs AHORRA-plus.apk
+          rm -f ks.p12 aligned.apk
+
+      - name: Publicar descarga
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: AHORRA+ 1.0.${{ github.run_number }}
+          make_latest: true
+          files: AHORRA-plus.apk
+          body: |
+            **Descargar:** toca `AHORRA-plus.apk` abajo, en *Assets*.
+
+            Para instalar en Android: abre el archivo descargado y, si el celular lo pide, permite "instalar apps desconocidas" para tu navegador o gestor de archivos.
+            Si ya tenías AHORRA+, esta versión se instala encima y conserva tus datos.

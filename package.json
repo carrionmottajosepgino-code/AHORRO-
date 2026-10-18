@@ -1,0 +1,21 @@
+{
+  "name": "ahorra-mas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AHORRA+ — finanzas personales por quincena o por mes, sin internet.",
+  "scripts": {
+    "test": "node --test tests/engine.test.js",
+    "web": "node scripts/build-web.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.6.9"
+  }
+}

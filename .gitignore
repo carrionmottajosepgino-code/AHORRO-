@@ -1,0 +1,8 @@
+node_modules/
+www/
+_site/
+android/
+*.p12
+*.keystore
+*.jks
+.DS_Store

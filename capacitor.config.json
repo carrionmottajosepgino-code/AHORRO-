@@ -1,0 +1,8 @@
+{
+  "appId": "pe.ahorramas.app",
+  "appName": "AHORRA+",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
