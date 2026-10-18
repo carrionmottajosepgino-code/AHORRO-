@@ -56,7 +56,7 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace || { echo "::error title=Compilación falló::Gradle no pudo compilar el APK."; exit 1; }
 
       - name: Firmar APK
         env:
@@ -67,11 +67,28 @@ jobs:
             echo "::error title=Falta la clave de firma::Agrega los secretos ANDROID_KEYSTORE_BASE64 y ANDROID_KEYSTORE_PASSWORD en Settings > Secrets and variables > Actions, y vuelve a ejecutar este flujo."
             exit 1
           fi
-          echo "$KS_B64" | base64 -d > ks.p12
+          # Quitar espacios o saltos de línea que se cuelan al copiar y pegar
+          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '[:space:]')
+          export KS_PASS
+          if ! printf '%s' "$KS_B64" | tr -d '[:space:]' | base64 -d > ks.p12 2>/dev/null; then
+            echo "::error title=Clave mal copiada::ANDROID_KEYSTORE_BASE64 no es válido. Vuelve a pegar la línea larga completa del SECRETO 2."
+            exit 1
+          fi
+          if ! keytool -list -storetype PKCS12 -keystore ks.p12 -storepass "$KS_PASS" >/dev/null 2>&1; then
+            echo "::error title=Contraseña incorrecta::ANDROID_KEYSTORE_PASSWORD no coincide con la clave. Vuelve a pegar el valor del SECRETO 1 (24 letras y números)."
+            exit 1
+          fi
+          UNSIGNED=$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "::error title=No se generó el APK::No hay APK en android/app/build/outputs/apk/release."
+            exit 1
+          fi
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
-          "$BT/apksigner" sign --ks ks.p12 --ks-type PKCS12 --ks-pass env:KS_PASS --key-pass env:KS_PASS --ks-key-alias ahorra --out AHORRA-plus.apk aligned.apk
-          "$BT/apksigner" verify --print-certs AHORRA-plus.apk
+          echo "::notice::APK sin firmar: $UNSIGNED · build-tools: $BT"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" aligned.apk || { echo "::error title=zipalign falló::$UNSIGNED"; exit 1; }
+          "$BT/apksigner" sign --ks ks.p12 --ks-type PKCS12 --ks-pass env:KS_PASS --key-pass env:KS_PASS --ks-key-alias ahorra --out AHORRA-plus.apk aligned.apk \
+            || { echo "::error title=apksigner falló::No se pudo firmar el APK."; exit 1; }
+          "$BT/apksigner" verify AHORRA-plus.apk || { echo "::error title=Firma inválida::apksigner verify falló."; exit 1; }
           rm -f ks.p12 aligned.apk
 
       - name: Publicar descarga
